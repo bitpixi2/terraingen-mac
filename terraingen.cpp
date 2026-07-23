@@ -929,7 +929,7 @@ void loadHeightfieldFromDisk(Simulation& sim, OpenCLCommandQueueRef command_queu
 	//TEMP loadStructMemberFromEXR(sim, "water.exr", offsetof(TerrainState, water));
 
 	// Upload to GPU
-	sim.terrain_state_buffer.copyFrom(command_queue, /*src ptr=*/&sim.terrain_state.elem(0, 0), /*size=*/sim.W * sim.H * sizeof(TerrainState), CL_MEM_READ_WRITE);
+	sim.terrain_state_buffer.copyFrom(command_queue, /*src ptr=*/&sim.terrain_state.elem(0, 0), /*size=*/sim.W * sim.H * sizeof(TerrainState), /*blocking_write=*/true);
 
 	conPrint("done.");
 }
@@ -1438,7 +1438,7 @@ int main(int argc, char** argv)
 		if(!opengl_engine->initSucceeded())
 			throw glare::Exception("OpenGL init failed: " + opengl_engine->getInitialisationErrorMsg());
 		opengl_engine->setViewportDims(primary_window_W, primary_window_H);
-		opengl_engine->setMainViewportDims(primary_window_W, primary_window_H);
+		opengl_engine->setViewportDims(primary_window_W, primary_window_H);
 
 		const float sun_phi = 1.f;
 		const float sun_theta = Maths::pi<float>() / 4;
@@ -1543,7 +1543,7 @@ int main(int argc, char** argv)
 			SDL_GL_GetDrawableSize(win, &gl_w, &gl_h);
 
 			opengl_engine->setViewportDims(gl_w, gl_h);
-			opengl_engine->setMainViewportDims(gl_w, gl_h);
+			opengl_engine->setViewportDims(gl_w, gl_h);
 			opengl_engine->setMaxDrawDistance(1000000.f);
 			opengl_engine->setPerspectiveCameraTransform(world_to_camera_space_matrix, sensor_width, lens_sensor_dist, render_aspect_ratio, /*lens shift up=*/0.f, /*lens shift right=*/0.f);
 			opengl_engine->setCurrentTime((float)timer.elapsed());
@@ -1847,7 +1847,7 @@ int main(int argc, char** argv)
 				ImGui::SetNextWindowSize(ImVec2(notification_window_w, tex_dims.y + 10));
 				ImGui::SetNextWindowPos(ImVec2(gl_w/2 - notification_window_w/2, 25));
 				ImGui::Begin("Notification", NULL, ImGuiWindowFlags_NoDecoration);
-				ImGui::Text(notification_info.notification.c_str());
+				ImGui::TextUnformatted(notification_info.notification.c_str());
 				ImGui::End();
 			}
 
@@ -1948,7 +1948,7 @@ int main(int argc, char** argv)
 						SDL_GL_GetDrawableSize(win, &w, &h);
 						
 						opengl_engine->setViewportDims(w, h);
-						opengl_engine->setMainViewportDims(w, h);
+						opengl_engine->setViewportDims(w, h);
 					}
 				}
 				else if(e.type == SDL_KEYDOWN)
