@@ -1,0 +1,37 @@
+name: macOS build
+
+on:
+  push:
+    branches:
+      - main
+      - codex/macos-alpha
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-arm64:
+    name: Build unsigned Apple Silicon app
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install cmake ninja sdl2 jpeg-turbo
+
+      - name: Build TerrainGen
+        run: bash macos/build.sh
+
+      - name: Package unsigned app
+        run: ditto -c -k --keepParent build-macos/TerrainGen.app TerrainGen-macos-arm64-unsigned.zip
+
+      - name: Upload unsigned build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TerrainGen-macos-arm64-unsigned
+          path: TerrainGen-macos-arm64-unsigned.zip
+          if-no-files-found: error
