@@ -29,7 +29,7 @@ diff --git a/opencl/OpenCL.h b/opencl/OpenCL.h
  #else
  #include <CL/cl.h>
  #include <CL/cl_platform.h>
-@@ -86,8 +88,12 @@
+@@ -86,6 +88,10 @@
  #if OPENCL_OPENGL_INTEROP
  typedef void * (CL_API_CALL *clGetExtensionFunctionAddress_TYPE) (const char *funcname);
 +#if defined(OSX)
