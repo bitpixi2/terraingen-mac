@@ -1,5 +1,31 @@
-# TerrainGen
+# TerrainGen for macOS (alpha)
 
+This fork is preparing a native macOS build of Nicholas Chapman's
+[TerrainGen](https://github.com/Ono-Sendai/terraingen). It keeps the original
+OpenCL erosion simulation and OpenGL renderer while adding the macOS-specific
+CGL sharing path, OpenGL 4.1 setup, app packaging, and native file panels.
+
+> **Current status:** source port under active verification. GitHub Actions
+> verifies that the app compiles on an Apple Silicon macOS runner, but a
+> successful CI build is not the same as a GPU/runtime test. Do not describe the
+> app as a finished or notarized release until the smoke-test checklist in
+> [building.md](building.md) passes on a real Mac.
+
+Build locally with:
+
+```bash
+brew install cmake ninja sdl2 jpeg-turbo
+./macos/build.sh
+open build-macos/TerrainGen.app
+```
+
+The first milestone is a stable Mac build. Importing an Australian DEM or other
+real elevation data is the next, separate feature; the current UI starts from
+procedural terrain.
+
+---
+
+## Original TerrainGen project
 TerrainGen is an open source terrain generator and erosion simulator.  
 It's GPU powered so runs pretty fast.
 
