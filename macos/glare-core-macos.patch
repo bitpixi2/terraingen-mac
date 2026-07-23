@@ -13,6 +13,18 @@ diff --git a/graphics/jpegdecoder.cpp b/graphics/jpegdecoder.cpp
  
  
  // See 'Precompute colour profile data' code in PNGDecoder.cpp.
+diff --git a/libpng/pngpriv.h b/libpng/pngpriv.h
+--- a/libpng/pngpriv.h
++++ b/libpng/pngpriv.h
+@@ -515,8 +515,8 @@
+ #  include <float.h>
+ 
+ #  if (defined(__MWERKS__) && defined(macintosh)) || defined(applec) || \
+-    defined(THINK_C) || defined(__SC__) || defined(TARGET_OS_MAC)
++    defined(THINK_C) || defined(__SC__) || (defined(TARGET_OS_MAC) && !defined(__MACH__))
+    /* We need to check that <math.h> hasn't already been included earlier
+     * as it seems it doesn't agree with <fp.h>, yet we should really use
+     * <fp.h> if possible.
 diff --git a/opencl/OpenCL.h b/opencl/OpenCL.h
 --- a/opencl/OpenCL.h
 +++ b/opencl/OpenCL.h
