@@ -15,7 +15,7 @@ Build locally with:
 
 ```bash
 brew install cmake ninja sdl2 jpeg-turbo
-./macos/build.sh
+bash macos/build.sh
 open build-macos/TerrainGen.app
 ```
 
