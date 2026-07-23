@@ -53,7 +53,7 @@ If Glare Core is already cloned:
 
 ```bash
 git -C /path/to/glare-core checkout 99a1550a062c61f03d015012bc217369178d378e
-git -C /path/to/glare-core apply macos/glare-core-macos.patch
+git -C /path/to/glare-core apply --ignore-space-change macos/glare-core-macos.patch
 
 CMAKE_PREFIX_PATH="$(brew --prefix sdl2);$(brew --prefix jpeg-turbo)"
 
