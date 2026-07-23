@@ -43,6 +43,9 @@ Copyright Nicholas Chapman 2025 -
 #include <backends/imgui_impl_sdl2.h>
 #include <fstream>
 #include <string>
+#ifdef __APPLE__
+#include <OpenGL/OpenGL.h>
+#endif
 #ifdef _WIN32
 #include <Objbase.h>
 #endif
@@ -1082,7 +1085,11 @@ void shareOpenGLBuffersWithOpenCLSim(Simulation* sim, OpenCLContextRef opencl_co
 
 	// Get OpenCL buffer for OpenGL terrain texture
 	{
+#if defined(__APPLE__)
+		const cl_mem terrain_tex_cl_mem = getGlobalOpenCL()->clCreateFromGLTexture2D(opencl_context->getContext(), CL_MEM_WRITE_ONLY, /*texture target=*/GL_TEXTURE_2D, /*miplevel=*/0, /*texture=*/terrain_col_tex->texture_handle, &retcode);
+#else
 		const cl_mem terrain_tex_cl_mem = getGlobalOpenCL()->clCreateFromGLTexture(opencl_context->getContext(), CL_MEM_WRITE_ONLY, /*texture target=*/GL_TEXTURE_2D, /*miplevel=*/0, /*texture=*/terrain_col_tex->texture_handle, &retcode);
+#endif
 		if(retcode != CL_SUCCESS)
 			throw glare::Exception("Failed to create OpenCL buffer for GL terrain texture: " + OpenCL::errorString(retcode));
 
@@ -1200,8 +1207,14 @@ int main(int argc, char** argv)
 
 
 		// Set GL attributes, needs to be done before window creation.
+#if defined(__APPLE__)
+		setGLAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+		setGLAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+		setGLAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+#else
 		setGLAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4); // We need to request a specific version for a core profile.
 		setGLAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
+#endif
 		setGLAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
 		setGLAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
@@ -1252,6 +1265,26 @@ int main(int argc, char** argv)
 			throw glare::Exception("No OpenCL GPU devices found");
 			
 		OpenCLContextRef opencl_context = new OpenCLContext(opencl_device, /*enable opengl interop=*/true);
+
+#if defined(__APPLE__)
+		cl_device_id display_opencl_device = NULL;
+		const cl_int display_device_result = clGetGLContextInfoAPPLE(
+			opencl_context->getContext(),
+			CGLGetCurrentContext(),
+			CL_CGL_DEVICE_FOR_CURRENT_VIRTUAL_SCREEN_APPLE,
+			sizeof(display_opencl_device),
+			&display_opencl_device,
+			NULL
+		);
+		if(display_device_result != CL_SUCCESS)
+			throw glare::Exception("Failed to find the OpenCL device for the current macOS OpenGL context: " + OpenCL::errorString(display_device_result));
+
+		for(size_t i=0; i<devices.size(); ++i)
+			if(devices[i]->opencl_device_id == display_opencl_device)
+				opencl_device = devices[i];
+		if(opencl_device->opencl_device_id != display_opencl_device)
+			throw glare::Exception("The macOS OpenGL GPU was not present in the OpenCL device list");
+#endif
 
 		std::vector<OpenCLDeviceRef> devices_to_build_for(1, opencl_device);
 
