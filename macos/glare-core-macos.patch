@@ -1,0 +1,247 @@
+diff --git a/graphics/jpegdecoder.cpp b/graphics/jpegdecoder.cpp
+--- a/graphics/jpegdecoder.cpp
++++ b/graphics/jpegdecoder.cpp
+@@ -29,8 +29,9 @@
+ 
+ 
+ // We use libjpeg-turbo for loading and saving JPEGs.
+-// Libjpeg-turbo should be version 3.0.0.  See building.txt and scripts/build_jpegturbo.rb.
+-static_assert(LIBJPEG_TURBO_VERSION_NUMBER == 3000000, "LIBJPEG_TURBO_VERSION_NUMBER == 3000000");
++// TerrainGen's macOS build uses Homebrew's current libjpeg-turbo 3.x.
++static_assert(LIBJPEG_TURBO_VERSION_NUMBER >= 3000000 && LIBJPEG_TURBO_VERSION_NUMBER < 4000000,
++	"TerrainGen requires libjpeg-turbo 3.x");
+ 
+ 
+ // See 'Precompute colour profile data' code in PNGDecoder.cpp.
+diff --git a/libpng/pngpriv.h b/libpng/pngpriv.h
+--- a/libpng/pngpriv.h
++++ b/libpng/pngpriv.h
+@@ -515,7 +515,7 @@
+ #  include <float.h>
+ 
+ #  if (defined(__MWERKS__) && defined(macintosh)) || defined(applec) || \
+-    defined(THINK_C) || defined(__SC__) || defined(TARGET_OS_MAC)
++    defined(THINK_C) || defined(__SC__) || (defined(TARGET_OS_MAC) && !defined(__MACH__))
+    /* We need to check that <math.h> hasn't already been included earlier
+     * as it seems it doesn't agree with <fp.h>, yet we should really use
+     * <fp.h> if possible.
+diff --git a/zlib/zutil.h b/zlib/zutil.h
+--- a/zlib/zutil.h
++++ b/zlib/zutil.h
+@@ -136,8 +136,8 @@
+ #    include <malloc.h>
+ #  endif
+ #endif
+ 
+-#if defined(MACOS) || defined(TARGET_OS_MAC)
++#if defined(MACOS) || (defined(TARGET_OS_MAC) && !defined(__MACH__))
+ #  define OS_CODE  7
+ #  ifndef Z_SOLO
+ #    if defined(__MWERKS__) && __dest_os != __be_os && __dest_os != __win32_os
+diff --git a/opencl/OpenCL.h b/opencl/OpenCL.h
+--- a/opencl/OpenCL.h
++++ b/opencl/OpenCL.h
+@@ -17,8 +17,10 @@
+ 
+ 
+ #ifdef OSX
+-#include <OpenCL/cl.h>
+-#include <OpenCL/cl_platform.h>
++#include <OpenCL/cl.h>
++#include <OpenCL/cl_platform.h>
++#include <OpenCL/cl_gl.h>
++#include <OpenCL/cl_gl_ext.h>
+ #else
+ #include <CL/cl.h>
+ #include <CL/cl_platform.h>
+@@ -86,6 +88,10 @@
+ #if OPENCL_OPENGL_INTEROP
+ typedef void * (CL_API_CALL *clGetExtensionFunctionAddress_TYPE) (const char *funcname);
++#if defined(OSX)
++typedef cl_int (CL_API_CALL *clGetGLContextInfoKHR_TYPE) (cl_context_properties *properties, cl_uint param_name, size_t param_value_size, void *param_value, size_t *param_value_size_ret);
++#else
+ typedef cl_int (CL_API_CALL *clGetGLContextInfoKHR_TYPE) (cl_context_properties *properties, cl_gl_context_info param_name, size_t param_value_size, void *param_value, size_t *param_value_size_ret);
++#endif
+ typedef cl_mem (CL_API_CALL *clCreateFromGLTexture_TYPE) (cl_context context, cl_mem_flags flags, cl_GLenum target, cl_GLint miplevel, cl_GLuint texture, cl_int *errcode_ret);
+ typedef cl_mem (CL_API_CALL *clCreateFromGLTexture2D_TYPE) (cl_context context, cl_mem_flags flags, cl_GLenum target, cl_GLint miplevel, cl_GLuint texture, cl_int *errcode_ret);
+ typedef cl_mem (CL_API_CALL *clCreateFromGLBuffer_TYPE) (cl_context context, cl_mem_flags flags, /*GLuint*/unsigned int bufobj, cl_int * errcode_ret);
+diff --git a/opencl/OpenCLContext.cpp b/opencl/OpenCLContext.cpp
+--- a/opencl/OpenCLContext.cpp
++++ b/opencl/OpenCLContext.cpp
+@@ -9,29 +9,51 @@
+ #include "OpenCL.h"
+ #include "ConPrint.h"
+ 
++#if defined(__APPLE__)
++#include <OpenGL/OpenGL.h>
++#endif
+ 
++
+ static std::vector<cl_context_properties> makePropertyList(cl_platform_id platform_id, bool enable_opengl_interop)
+ {
+ 	std::vector<cl_context_properties> props;
+-	props.push_back(CL_CONTEXT_PLATFORM);
+-	props.push_back((cl_context_properties)platform_id);
+ 
+-#if OPENCL_OPENGL_INTEROP
++#if OPENCL_OPENGL_INTEROP && defined(__APPLE__)
+ 	if(enable_opengl_interop)
+ 	{
+-		if(getGlobalOpenCL()->current_gl_context == 0)
++		CGLContextObj cgl_context = CGLGetCurrentContext();
++		if(cgl_context == NULL)
+ 			throw glare::Exception("OpenCLContext: Current GL context is NULL when creating an OpenCL context with OpenGL interop");
+-		if(getGlobalOpenCL()->current_DC == 0)
+-			throw glare::Exception("OpenCLContext: Current window device context (HDC) is NULL when creating an OpenCL context with OpenGL interop");
+ 
+-		props.push_back(CL_GL_CONTEXT_KHR);
+-		props.push_back(getGlobalOpenCL()->current_gl_context);
++		CGLShareGroupObj share_group = CGLGetShareGroup(cgl_context);
++		if(share_group == NULL)
++			throw glare::Exception("OpenCLContext: Current CGL share group is NULL");
+ 
+-		props.push_back(CL_WGL_HDC_KHR);
+-		props.push_back(getGlobalOpenCL()->current_DC);
++		props.push_back(CL_CONTEXT_PROPERTY_USE_CGL_SHAREGROUP_APPLE);
++		props.push_back((cl_context_properties)share_group);
+ 	}
++	else
+ #endif
++	{
++		props.push_back(CL_CONTEXT_PLATFORM);
++		props.push_back((cl_context_properties)platform_id);
+ 
++#if OPENCL_OPENGL_INTEROP && !defined(__APPLE__)
++		if(enable_opengl_interop)
++		{
++			if(getGlobalOpenCL()->current_gl_context == 0)
++				throw glare::Exception("OpenCLContext: Current GL context is NULL when creating an OpenCL context with OpenGL interop");
++			if(getGlobalOpenCL()->current_DC == 0)
++				throw glare::Exception("OpenCLContext: Current window device context (HDC) is NULL when creating an OpenCL context with OpenGL interop");
++
++			props.push_back(CL_GL_CONTEXT_KHR);
++			props.push_back(getGlobalOpenCL()->current_gl_context);
++			props.push_back(CL_WGL_HDC_KHR);
++			props.push_back(getGlobalOpenCL()->current_DC);
++		}
++#endif
++	}
++
+ 	props.push_back(0); // Terminating property
+ 
+ 	return props;
+@@ -60,7 +82,17 @@
+ 	std::vector<cl_context_properties> props = makePropertyList(opencl_device->opencl_platform_id, enable_opengl_interop);
+ 
+ 	cl_int error_code;
++#if OPENCL_OPENGL_INTEROP && defined(__APPLE__)
+ 	this->context = ::getGlobalOpenCL()->clCreateContext(
++		props.data(),
++		enable_opengl_interop ? 0 : 1,
++		enable_opengl_interop ? NULL : &opencl_device->opencl_device_id,
++		NULL,
++		NULL,
++		&error_code
++	);
++#else
++	this->context = ::getGlobalOpenCL()->clCreateContext(
+ 		props.data(), // properties
+ 		1, // num devices
+ 		&opencl_device->opencl_device_id, // devices
+@@ -68,6 +100,7 @@
+ 		NULL, // user data
+ 		&error_code
+ 	);
++#endif
+ 	if(this->context == 0)
+ 		throw glare::Exception("clCreateContext failed: " + OpenCL::errorString(error_code));
+ }
+diff --git a/opencl/OpenCL.cpp b/opencl/OpenCL.cpp
+--- a/opencl/OpenCL.cpp
++++ b/opencl/OpenCL.cpp
+@@ -146,7 +146,7 @@
+ 	this->clCreateCommandQueue = ::clCreateCommandQueue;
+ 	this->clReleaseCommandQueue = ::clReleaseCommandQueue;
+ 	this->clCreateBuffer = ::clCreateBuffer;
+-	this->clCreateImage = ::clCreateImage;
++	this->clCreateImage = NULL; // OpenCL 1.2; TerrainGen does not use this API.
+ 	this->clReleaseMemObject = ::clReleaseMemObject;
+ 	this->clRetainEvent = ::clRetainEvent;
+ 	this->clCreateProgramWithSource = ::clCreateProgramWithSource;
+@@ -173,7 +173,7 @@
+ 	this->clGetMemObjectInfo = ::clGetMemObjectInfo;
+ 
+ 	// OpenCL 1.2 function:
+-	this->clEnqueueFillBuffer = ::clEnqueueFillBuffer;
++	this->clEnqueueFillBuffer = NULL; // Keep the Apple Silicon OpenCL 1.1 path linkable.
+ 
+ #if OPENCL_OPENGL_INTEROP
+ 	this->clGetExtensionFunctionAddress = ::clGetExtensionFunctionAddress;
+@@ -184,7 +184,16 @@
+ #endif
+ 
+ #if OPENCL_OPENGL_INTEROP
+-	// Get interop functions using clGetExtensionFunctionAddress
++#if defined(__APPLE__)
++	// Apple's OpenCL 1.1 framework exports the GL-sharing entry points directly.
++	clGetGLContextInfoKHR = NULL;
++	clCreateFromGLTexture = NULL; // OpenCL 1.2; use clCreateFromGLTexture2D.
++	clCreateFromGLTexture2D = ::clCreateFromGLTexture2D;
++	clCreateFromGLBuffer = ::clCreateFromGLBuffer;
++	clEnqueueAcquireGLObjects = ::clEnqueueAcquireGLObjects;
++	clEnqueueReleaseGLObjects = ::clEnqueueReleaseGLObjects;
++#else
++	// Get interop functions using clGetExtensionFunctionAddress.
+ 	if(clGetExtensionFunctionAddress != NULL)
+ 	{
+ 		clGetGLContextInfoKHR = (clGetGLContextInfoKHR_TYPE)clGetExtensionFunctionAddress("clGetGLContextInfoKHR");
+@@ -194,6 +203,7 @@
+ 		clEnqueueAcquireGLObjects = (clEnqueueAcquireGLObjects_TYPE)clGetExtensionFunctionAddress("clEnqueueAcquireGLObjects");
+ 		clEnqueueReleaseGLObjects = (clEnqueueReleaseGLObjects_TYPE)clGetExtensionFunctionAddress("clEnqueueReleaseGLObjects");
+ 	}
++#endif
+ 	current_gl_context = 0;
+ 	current_DC = 0;
+ #endif
+@@ -225,8 +235,8 @@
+ #if defined(_WIN32)
+ 	current_gl_context = (cl_context_properties)wglGetCurrentContext();
+ 	current_DC = (cl_context_properties)wglGetCurrentDC();
+-#else
+-	// TODO mac and linux
++#elif !defined(__APPLE__)
++	// TODO Linux
+ 	current_gl_context = 0;
+ 	current_DC = 0;
+ #endif
+@@ -279,6 +289,7 @@
+ 
+ 		cl_device_id platform_GL_devices[32];
+ 		int platform_num_GL_devices = 0;
++#if !defined(__APPLE__)
+ 		if(platform_OpenGL_interop)
+ 		{
+ 			// Create CL context properties, add WGL context & handle to DC
+@@ -296,6 +307,7 @@
+ 				platform_num_GL_devices = (int)(devices_size / sizeof(cl_device_id));
+ 		}
+ #endif
++#endif
+ 
+ 		if(verbose)
+ 		{
+@@ -397,10 +409,14 @@
+ 				throw glare::Exception("clGetDeviceInfo failed");
+ 
+ #if OPENCL_OPENGL_INTEROP
++#if defined(__APPLE__)
++			const bool device_OpenGL_interop = platform_OpenGL_interop && ((device_type & CL_DEVICE_TYPE_GPU) != 0);
++#else
+ 			bool device_OpenGL_interop = false;
+ 			for(int j = 0; j < platform_num_GL_devices; ++j)
+ 				if(platform_GL_devices[j] == device_ids[d]) { device_OpenGL_interop = true; break; }
+ #endif
++#endif
+ 
+ 			if(verbose)
+ 			{

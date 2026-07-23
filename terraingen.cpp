@@ -43,6 +43,9 @@ Copyright Nicholas Chapman 2025 -
 #include <backends/imgui_impl_sdl2.h>
 #include <fstream>
 #include <string>
+#ifdef __APPLE__
+#include <OpenGL/OpenGL.h>
+#endif
 #ifdef _WIN32
 #include <Objbase.h>
 #endif
@@ -926,7 +929,7 @@ void loadHeightfieldFromDisk(Simulation& sim, OpenCLCommandQueueRef command_queu
 	//TEMP loadStructMemberFromEXR(sim, "water.exr", offsetof(TerrainState, water));
 
 	// Upload to GPU
-	sim.terrain_state_buffer.copyFrom(command_queue, /*src ptr=*/&sim.terrain_state.elem(0, 0), /*size=*/sim.W * sim.H * sizeof(TerrainState), CL_MEM_READ_WRITE);
+	sim.terrain_state_buffer.copyFrom(command_queue, /*src ptr=*/&sim.terrain_state.elem(0, 0), /*size=*/sim.W * sim.H * sizeof(TerrainState), /*blocking_write=*/true);
 
 	conPrint("done.");
 }
@@ -1082,7 +1085,11 @@ void shareOpenGLBuffersWithOpenCLSim(Simulation* sim, OpenCLContextRef opencl_co
 
 	// Get OpenCL buffer for OpenGL terrain texture
 	{
+#if defined(__APPLE__)
+		const cl_mem terrain_tex_cl_mem = getGlobalOpenCL()->clCreateFromGLTexture2D(opencl_context->getContext(), CL_MEM_WRITE_ONLY, /*texture target=*/GL_TEXTURE_2D, /*miplevel=*/0, /*texture=*/terrain_col_tex->texture_handle, &retcode);
+#else
 		const cl_mem terrain_tex_cl_mem = getGlobalOpenCL()->clCreateFromGLTexture(opencl_context->getContext(), CL_MEM_WRITE_ONLY, /*texture target=*/GL_TEXTURE_2D, /*miplevel=*/0, /*texture=*/terrain_col_tex->texture_handle, &retcode);
+#endif
 		if(retcode != CL_SUCCESS)
 			throw glare::Exception("Failed to create OpenCL buffer for GL terrain texture: " + OpenCL::errorString(retcode));
 
@@ -1200,8 +1207,14 @@ int main(int argc, char** argv)
 
 
 		// Set GL attributes, needs to be done before window creation.
+#if defined(__APPLE__)
+		setGLAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+		setGLAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+		setGLAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+#else
 		setGLAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4); // We need to request a specific version for a core profile.
 		setGLAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
+#endif
 		setGLAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
 		setGLAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
@@ -1252,6 +1265,26 @@ int main(int argc, char** argv)
 			throw glare::Exception("No OpenCL GPU devices found");
 			
 		OpenCLContextRef opencl_context = new OpenCLContext(opencl_device, /*enable opengl interop=*/true);
+
+#if defined(__APPLE__)
+		cl_device_id display_opencl_device = NULL;
+		const cl_int display_device_result = clGetGLContextInfoAPPLE(
+			opencl_context->getContext(),
+			CGLGetCurrentContext(),
+			CL_CGL_DEVICE_FOR_CURRENT_VIRTUAL_SCREEN_APPLE,
+			sizeof(display_opencl_device),
+			&display_opencl_device,
+			NULL
+		);
+		if(display_device_result != CL_SUCCESS)
+			throw glare::Exception("Failed to find the OpenCL device for the current macOS OpenGL context: " + OpenCL::errorString(display_device_result));
+
+		for(size_t i=0; i<devices.size(); ++i)
+			if(devices[i]->opencl_device_id == display_opencl_device)
+				opencl_device = devices[i];
+		if(opencl_device->opencl_device_id != display_opencl_device)
+			throw glare::Exception("The macOS OpenGL GPU was not present in the OpenCL device list");
+#endif
 
 		std::vector<OpenCLDeviceRef> devices_to_build_for(1, opencl_device);
 
@@ -1405,7 +1438,7 @@ int main(int argc, char** argv)
 		if(!opengl_engine->initSucceeded())
 			throw glare::Exception("OpenGL init failed: " + opengl_engine->getInitialisationErrorMsg());
 		opengl_engine->setViewportDims(primary_window_W, primary_window_H);
-		opengl_engine->setMainViewportDims(primary_window_W, primary_window_H);
+		opengl_engine->setViewportDims(primary_window_W, primary_window_H);
 
 		const float sun_phi = 1.f;
 		const float sun_theta = Maths::pi<float>() / 4;
@@ -1510,7 +1543,7 @@ int main(int argc, char** argv)
 			SDL_GL_GetDrawableSize(win, &gl_w, &gl_h);
 
 			opengl_engine->setViewportDims(gl_w, gl_h);
-			opengl_engine->setMainViewportDims(gl_w, gl_h);
+			opengl_engine->setViewportDims(gl_w, gl_h);
 			opengl_engine->setMaxDrawDistance(1000000.f);
 			opengl_engine->setPerspectiveCameraTransform(world_to_camera_space_matrix, sensor_width, lens_sensor_dist, render_aspect_ratio, /*lens shift up=*/0.f, /*lens shift right=*/0.f);
 			opengl_engine->setCurrentTime((float)timer.elapsed());
@@ -1814,7 +1847,7 @@ int main(int argc, char** argv)
 				ImGui::SetNextWindowSize(ImVec2(notification_window_w, tex_dims.y + 10));
 				ImGui::SetNextWindowPos(ImVec2(gl_w/2 - notification_window_w/2, 25));
 				ImGui::Begin("Notification", NULL, ImGuiWindowFlags_NoDecoration);
-				ImGui::Text(notification_info.notification.c_str());
+				ImGui::TextUnformatted(notification_info.notification.c_str());
 				ImGui::End();
 			}
 
@@ -1915,7 +1948,7 @@ int main(int argc, char** argv)
 						SDL_GL_GetDrawableSize(win, &w, &h);
 						
 						opengl_engine->setViewportDims(w, h);
-						opengl_engine->setMainViewportDims(w, h);
+						opengl_engine->setViewportDims(w, h);
 					}
 				}
 				else if(e.type == SDL_KEYDOWN)

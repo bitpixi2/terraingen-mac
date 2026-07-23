@@ -1,0 +1,49 @@
+name: macOS build
+
+on:
+  push:
+    branches:
+      - main
+      - codex/macos-alpha
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-arm64:
+    name: Build ad-hoc signed Apple Silicon app
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Remove unused runner tap
+        run: brew untap aws/tap 2>/dev/null || true
+
+      - name: Install build dependencies
+        run: brew install cmake ninja sdl2 jpeg-turbo
+
+      - name: Build TerrainGen
+        run: bash macos/build.sh
+
+      - name: Seal and verify app bundle
+        run: |
+          codesign --force --sign - --timestamp=none build-macos/TerrainGen.app
+          codesign --verify --deep --strict --verbose=4 build-macos/TerrainGen.app
+
+      - name: Package ad-hoc signed app
+        run: |
+          ditto -c -k --keepParent build-macos/TerrainGen.app TerrainGen-macos-arm64-adhoc.zip
+          shasum -a 256 TerrainGen-macos-arm64-adhoc.zip > TerrainGen-macos-arm64-adhoc.zip.sha256
+
+      - name: Upload test build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: TerrainGen-macos-arm64-adhoc
+          path: |
+            TerrainGen-macos-arm64-adhoc.zip
+            TerrainGen-macos-arm64-adhoc.zip.sha256
+          if-no-files-found: error
