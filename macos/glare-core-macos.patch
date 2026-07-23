@@ -16,13 +16,16 @@ diff --git a/graphics/jpegdecoder.cpp b/graphics/jpegdecoder.cpp
 diff --git a/opencl/OpenCL.h b/opencl/OpenCL.h
 --- a/opencl/OpenCL.h
 +++ b/opencl/OpenCL.h
-@@ -17,8 +17,7 @@
+@@ -17,8 +17,10 @@
  
  
  #ifdef OSX
 -#include <OpenCL/cl.h>
 -#include <OpenCL/cl_platform.h>
-+#include <OpenCL/opencl.h>
++#include <OpenCL/cl.h>
++#include <OpenCL/cl_platform.h>
++#include <OpenCL/cl_gl.h>
++#include <OpenCL/cl_gl_ext.h>
  #else
  #include <CL/cl.h>
  #include <CL/cl_platform.h>
