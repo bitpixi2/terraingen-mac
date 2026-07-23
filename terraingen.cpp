@@ -41,8 +41,15 @@ Copyright Nicholas Chapman 2025 -
 #include <imgui.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <backends/imgui_impl_sdl2.h>
+#include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <fstream>
+#include <limits>
+#include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 #ifdef __APPLE__
 #include <OpenGL/OpenGL.h>
 #endif
@@ -262,6 +269,18 @@ public:
 		//thermalErosionDepositedMovementKernel = new OpenCLKernel(program, "thermalErosionDepositedMovementKernel", opencl_device->opencl_device_id, profile);
 		evaporationKernel = new OpenCLKernel(program, "evaporationKernel", opencl_device->opencl_device_id, profile);
 		setHeightFieldMeshKernel = new OpenCLKernel(program, "setHeightFieldMeshKernel", opencl_device->opencl_device_id, profile);
+
+		// Glare Core's preferred explicit work-group width requires W to be an
+		// exact multiple. Real-world DEM tiles are commonly 1000 cells wide, so
+		// let the OpenCL driver choose a valid local size for non-aligned grids.
+		computeWaterVelDerivs->setUseExplicitWorkGroupSize(W % computeWaterVelDerivs->getWorkGroupSize() == 0);
+		thermalErosionFluxKernel->setUseExplicitWorkGroupSize(W % thermalErosionFluxKernel->getWorkGroupSize() == 0);
+		waterVelFieldUpdateKernel->setUseExplicitWorkGroupSize(W % waterVelFieldUpdateKernel->getWorkGroupSize() == 0);
+		erosionAndDepositionKernel->setUseExplicitWorkGroupSize(W % erosionAndDepositionKernel->getWorkGroupSize() == 0);
+		waterAndSedimentTransportationKernel->setUseExplicitWorkGroupSize(W % waterAndSedimentTransportationKernel->getWorkGroupSize() == 0);
+		thermalErosionMovementKernel->setUseExplicitWorkGroupSize(W % thermalErosionMovementKernel->getWorkGroupSize() == 0);
+		evaporationKernel->setUseExplicitWorkGroupSize(W % evaporationKernel->getWorkGroupSize() == 0);
+		setHeightFieldMeshKernel->setUseExplicitWorkGroupSize(W % setHeightFieldMeshKernel->getWorkGroupSize() == 0);
 	}
 
 
@@ -644,7 +663,7 @@ void resetTerrain(Simulation& sim, OpenCLCommandQueueRef command_queue, const Te
 	const float initial_water_mass = waterMassForHeight(terrain_params.initial_water_depth, cell_w);
 
 	// Set initial state
-	TerrainState f;
+	TerrainState f = {};
 	f.height = 1.f;
 	f.suspended_vol = 0.f;
 	f.deposited_sed_h = 0.f;
@@ -653,7 +672,7 @@ void resetTerrain(Simulation& sim, OpenCLCommandQueueRef command_queue, const Te
 
 	sim.terrain_state.setAllElems(f);
 
-	FlowState flow_state;
+	FlowState flow_state = {};
 	flow_state.f_L = flow_state.f_R = flow_state.f_T = flow_state.f_B = 0;
 	flow_state.sed_f_L = flow_state.sed_f_R = flow_state.sed_f_T = flow_state.sed_f_B = 0;
 
@@ -774,6 +793,206 @@ void resetTerrain(Simulation& sim, OpenCLCommandQueueRef command_queue, const Te
 
 	// Upload to GPU
 	sim.terrain_state_buffer.copyFrom(command_queue, /*src ptr=*/&sim.terrain_state.elem(0, 0), /*size=*/W * H * sizeof(TerrainState), /*blocking_write=*/true);
+}
+
+
+struct EsriAsciiGrid
+{
+	int width = 0;
+	int height = 0;
+	double x_origin = 0;
+	double y_origin = 0;
+	bool x_origin_is_centre = false;
+	bool y_origin_is_centre = false;
+	float cell_size = 0;
+	float no_data_value = 0;
+	bool has_no_data_value = false;
+	size_t replaced_no_data_values = 0;
+	float min_height = 0;
+	float max_height = 0;
+	std::string source_path;
+	std::vector<float> heights_north_to_south;
+};
+
+
+static std::string lowercaseString(const std::string& s)
+{
+	std::string result = s;
+	std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+	return result;
+}
+
+
+EsriAsciiGrid loadEsriAsciiGrid(const std::string& path)
+{
+	std::ifstream file(path.c_str());
+	if(!file)
+		throw glare::Exception("Could not open ESRI ASCII grid '" + path + "'.");
+
+	EsriAsciiGrid grid;
+	grid.source_path = path;
+
+	bool have_width = false;
+	bool have_height = false;
+	bool have_x_origin = false;
+	bool have_y_origin = false;
+	bool have_cell_size = false;
+	std::string first_data_line;
+
+	std::string line;
+	while(std::getline(file, line))
+	{
+		std::istringstream line_stream(line);
+		std::string key;
+		if(!(line_stream >> key))
+			continue;
+
+		const std::string lowercase_key = lowercaseString(key);
+		if(lowercase_key == "ncols")
+		{
+			if(!(line_stream >> grid.width))
+				throw glare::Exception("Invalid ncols value in '" + path + "'.");
+			have_width = true;
+		}
+		else if(lowercase_key == "nrows")
+		{
+			if(!(line_stream >> grid.height))
+				throw glare::Exception("Invalid nrows value in '" + path + "'.");
+			have_height = true;
+		}
+		else if(lowercase_key == "xllcorner" || lowercase_key == "xllcenter")
+		{
+			if(!(line_stream >> grid.x_origin))
+				throw glare::Exception("Invalid x origin in '" + path + "'.");
+			grid.x_origin_is_centre = lowercase_key == "xllcenter";
+			have_x_origin = true;
+		}
+		else if(lowercase_key == "yllcorner" || lowercase_key == "yllcenter")
+		{
+			if(!(line_stream >> grid.y_origin))
+				throw glare::Exception("Invalid y origin in '" + path + "'.");
+			grid.y_origin_is_centre = lowercase_key == "yllcenter";
+			have_y_origin = true;
+		}
+		else if(lowercase_key == "cellsize")
+		{
+			if(!(line_stream >> grid.cell_size))
+				throw glare::Exception("Invalid cellsize value in '" + path + "'.");
+			have_cell_size = true;
+		}
+		else if(lowercase_key == "nodata_value")
+		{
+			if(!(line_stream >> grid.no_data_value))
+				throw glare::Exception("Invalid NODATA_value in '" + path + "'.");
+			grid.has_no_data_value = true;
+		}
+		else
+		{
+			first_data_line = line;
+			break;
+		}
+	}
+
+	if(!have_width || !have_height || !have_x_origin || !have_y_origin || !have_cell_size)
+		throw glare::Exception("The ESRI ASCII grid header is incomplete in '" + path + "'.");
+	if(grid.width < 2 || grid.height < 2)
+		throw glare::Exception("The elevation grid must be at least 2 x 2 cells.");
+	if(!std::isfinite(grid.cell_size) || grid.cell_size <= 0)
+		throw glare::Exception("The elevation grid cell size must be a positive number.");
+
+	const int max_dimension = 4096;
+	const size_t max_cells = 2048u * 2048u;
+	const size_t expected_values = (size_t)grid.width * (size_t)grid.height;
+	if(grid.width > max_dimension || grid.height > max_dimension || expected_values > max_cells)
+		throw glare::Exception(
+			"The elevation grid is too large for this alpha importer (" + toString(grid.width) + " x " + toString(grid.height) +
+			"). Crop or resample it to no more than 4,194,304 cells and 4,096 cells on either side."
+		);
+
+	grid.heights_north_to_south.reserve(expected_values);
+
+	const auto append_values = [&](const std::string& values_line, std::vector<float>& values)
+	{
+		std::istringstream values_stream(values_line);
+		float value;
+		while(values_stream >> value)
+		{
+			if(values.size() >= expected_values)
+				throw glare::Exception("The ESRI ASCII grid contains more elevation values than its header declares.");
+			values.push_back(value);
+		}
+		if(!values_stream.eof())
+			throw glare::Exception("Invalid elevation value in '" + path + "'.");
+	};
+
+	if(first_data_line.empty())
+		throw glare::Exception("The ESRI ASCII grid does not contain any elevation values.");
+	append_values(first_data_line, grid.heights_north_to_south);
+	while(std::getline(file, line))
+		append_values(line, grid.heights_north_to_south);
+
+	if(grid.heights_north_to_south.size() != expected_values)
+		throw glare::Exception(
+			"The ESRI ASCII grid declares " + toString(expected_values) + " cells but contains " +
+			toString(grid.heights_north_to_south.size()) + " elevation values."
+		);
+
+	grid.min_height = std::numeric_limits<float>::infinity();
+	grid.max_height = -std::numeric_limits<float>::infinity();
+	for(float& value : grid.heights_north_to_south)
+	{
+		const bool is_no_data = grid.has_no_data_value && value == grid.no_data_value;
+		if(is_no_data)
+		{
+			value = std::numeric_limits<float>::quiet_NaN();
+			++grid.replaced_no_data_values;
+		}
+		else
+		{
+			if(!std::isfinite(value))
+				throw glare::Exception("The ESRI ASCII grid contains a non-finite elevation value.");
+			grid.min_height = std::min(grid.min_height, value);
+			grid.max_height = std::max(grid.max_height, value);
+		}
+	}
+
+	if(!std::isfinite(grid.min_height))
+		throw glare::Exception("The ESRI ASCII grid contains no usable elevation values.");
+
+	// TerrainGen has no concept of an absent cell. Filling gaps with the lowest
+	// valid height avoids turning common -9999 sentinels into giant terrain pits.
+	for(float& value : grid.heights_north_to_south)
+		if(!std::isfinite(value))
+			value = grid.min_height;
+
+	conPrint(
+		"Loaded ESRI ASCII grid '" + path + "': " + toString(grid.width) + " x " + toString(grid.height) +
+		", cell size " + toString(grid.cell_size) + " m, elevation range " + toString(grid.min_height) +
+		" to " + toString(grid.max_height) + " m."
+	);
+	return grid;
+}
+
+
+void applyEsriAsciiGrid(Simulation& sim, OpenCLCommandQueueRef command_queue, const EsriAsciiGrid& grid)
+{
+	if(sim.W != grid.width || sim.H != grid.height)
+		throw glare::Exception("The elevation grid dimensions do not match the TerrainGen simulation grid.");
+
+	// ESRI ASCII rows run north-to-south. TerrainGen stores y=0 at the bottom,
+	// so flip the rows to keep north at the top of exported images.
+	for(int source_y=0; source_y<grid.height; ++source_y)
+	for(int x=0; x<grid.width; ++x)
+		sim.terrain_state.elem(x, grid.height - source_y - 1).height =
+			grid.heights_north_to_south[(size_t)x + (size_t)source_y * (size_t)grid.width];
+
+	sim.sim_iteration = 0;
+	sim.terrain_state_buffer.copyFrom(
+		command_queue,
+		/*src ptr=*/&sim.terrain_state.elem(0, 0),
+		/*size=*/sim.W * sim.H * sizeof(TerrainState),
+		/*blocking_write=*/true
+	);
 }
 
 
@@ -1194,6 +1413,7 @@ int main(int argc, char** argv)
 
 		std::map<std::string, std::vector<ArgumentParser::ArgumentType> > syntax;
 		syntax["--params"] = std::vector<ArgumentParser::ArgumentType>(1, ArgumentParser::ArgumentType_string); // One string arg
+		syntax["--dem"] = std::vector<ArgumentParser::ArgumentType>(1, ArgumentParser::ArgumentType_string); // ESRI ASCII grid path
 
 		ArgumentParser arg_parser(args, syntax, /*allow unnamed arg=*/false);
 
@@ -1402,11 +1622,24 @@ int main(int argc, char** argv)
 			loadParametersFromFile(param_path, constants, terrain_params);
 		}
 
+		EsriAsciiGrid startup_dem;
+		bool have_startup_dem = false;
+		if(arg_parser.isArgPresent("--dem"))
+		{
+			startup_dem = loadEsriAsciiGrid(arg_parser.getArgStringValue("--dem"));
+			constants.W = startup_dem.width;
+			constants.H = startup_dem.height;
+			constants.cell_w = startup_dem.cell_size;
+			constants.recip_cell_w = 1.f / constants.cell_w;
+			have_startup_dem = true;
+		}
 
 		Simulation* sim = new Simulation(constants.W, constants.H, opencl_context, program, opencl_device, profile, constants);
 		sim->use_water_mesh = use_water_mesh;
 
 		resetTerrain(*sim, command_queue, terrain_params, constants.cell_w, constants.sea_level);
+		if(have_startup_dem)
+			applyEsriAsciiGrid(*sim, command_queue, startup_dem);
 		
 
 		//=========================== Initialise ImGUI ================================
@@ -1486,8 +1719,8 @@ int main(int argc, char** argv)
 		float cam_phi = 0.0; // azimuthal angle
 		float cam_theta = 2.1f; // zenith angle
 
-		const float terrain_w = constants.W * constants.cell_w;
-		const float terrain_h = constants.H * constants.cell_w;
+		float terrain_w = constants.W * constants.cell_w;
+		float terrain_h = constants.H * constants.cell_w;
 		Vec4f cam_pos;
 		{
 		const Vec4f terrain_centre = Vec4f(terrain_w / 2.f, terrain_h / 2.f, sim->terrain_state.elem(constants.W/2, constants.H/2).height, 1);
@@ -1513,6 +1746,16 @@ int main(int argc, char** argv)
 		int new_W = constants.W;
 		int new_H = constants.H;
 		float new_cell_w = constants.cell_w;
+		EsriAsciiGrid active_dem;
+		bool have_active_dem = false;
+		if(have_startup_dem)
+		{
+			active_dem = std::move(startup_dem);
+			have_active_dem = true;
+			sim_running = false;
+		}
+		EsriAsciiGrid pending_dem;
+		bool have_pending_dem = false;
 
 		bool quit = false;
 		while(!quit)
@@ -1571,7 +1814,13 @@ int main(int argc, char** argv)
 			ImGui::InputInt(/*label=*/"grid x res", /*val=*/&new_W, /*step=*/1, /*step fast=*/32);
 			ImGui::InputInt(/*label=*/"grid Y res", /*val=*/&new_H, /*step=*/1, /*step fast=*/32);
 			ImGui::SliderFloat(/*label=*/"cell width (m)", /*val=*/&new_cell_w, /*min=*/0.0001f, /*max=*/100.f, "%.3f");
-			bool grid_changed = ImGui::Button("Apply");
+			const bool grid_apply_clicked = ImGui::Button("Apply");
+			bool grid_changed = grid_apply_clicked;
+			if(grid_apply_clicked)
+			{
+				have_active_dem = false;
+				have_pending_dem = false;
+			}
 
 			ImGui::SliderFloat(/*label=*/"delta_t (s)", /*val=*/&constants.delta_t, /*min=*/0.0f, /*max=*/0.3f, "%.3f");
 
@@ -1687,6 +1936,8 @@ int main(int argc, char** argv)
 						new_W = constants.W;
 						new_H = constants.H;
 						new_cell_w = constants.cell_w;
+						have_active_dem = false;
+						have_pending_dem = false;
 
 						grid_changed = constants.W != old_constants.W || constants.H != old_constants.H || constants.cell_w != old_constants.cell_w;
 						reset = true;
@@ -1813,12 +2064,52 @@ int main(int argc, char** argv)
 				saveHeightfieldToDisk(*sim, exr_use_DWAB, command_queue, notification_info);
 			}
 
+			if(ImGui::Button("Import elevation grid (.asc)"))
+			{
+				try
+				{
+					FileDialogs::Options options;
+					options.dialog_title = "Import ESRI ASCII elevation grid";
+					options.file_types.push_back(FileDialogs::FileTypeInfo("ESRI ASCII Grid", "*.asc", "asc"));
+					const std::string path = FileDialogs::showOpenFileDialog(options);
+					if(!path.empty())
+					{
+						pending_dem = loadEsriAsciiGrid(path);
+						have_pending_dem = true;
+						new_W = pending_dem.width;
+						new_H = pending_dem.height;
+						new_cell_w = pending_dem.cell_size;
+						grid_changed = true;
+						sim_running = false;
+					}
+				}
+				catch(glare::Exception& e)
+				{
+					SDL_ShowSimpleMessageBox(
+						SDL_MESSAGEBOX_ERROR,
+						"Failed to import elevation grid",
+						e.what().c_str(),
+						/*parent=*/win
+					);
+				}
+			}
+
 			if(ImGui::Button("Save colour texture to disk"))
 			{
 				saveColourTextureToDisk(*sim, command_queue, terrain_col_tex, notification_info);
 			}
 
 			ImGui::Checkbox("EXR: use DWAB", &exr_use_DWAB);
+			if(have_active_dem)
+			{
+				ImGui::TextWrapped("%s", ("Imported DEM: " + active_dem.source_path).c_str());
+				ImGui::Text(
+					"Elevation: %.2f to %.2f m; cell: %.2f m",
+					active_dem.min_height,
+					active_dem.max_height,
+					active_dem.cell_size
+				);
+			}
 
 			//-------------------------------------- Render Info section --------------------------------------
 			ImGui::Dummy(ImVec2(60, spacing_vert_pixels));
@@ -1907,15 +2198,43 @@ int main(int argc, char** argv)
 				constants.cell_w = new_cell_w;
 
 				sim = new Simulation(constants.W, constants.H, opencl_context, program, opencl_device, profile, constants);
+				sim->use_water_mesh = use_water_mesh;
 
 				resetTerrain(*sim, command_queue, terrain_params, constants.cell_w, constants.sea_level);
+				if(have_pending_dem)
+				{
+					applyEsriAsciiGrid(*sim, command_queue, pending_dem);
+					active_dem = std::move(pending_dem);
+					have_active_dem = true;
+					have_pending_dem = false;
+					showNotification(
+						notification_info,
+						"Imported " + toString(active_dem.width) + " x " + toString(active_dem.height) + " elevation grid."
+					);
+				}
 
 				createAndAddTerrainTextureAndMeshes(constants, sim, opengl_engine, opencl_context, use_water_mesh, terrain_col_tex, terrain_gl_ob, water_gl_ob);
+
+				terrain_w = constants.W * constants.cell_w;
+				terrain_h = constants.H * constants.cell_w;
+				const Vec4f terrain_centre = Vec4f(
+					terrain_w / 2.f,
+					terrain_h / 2.f,
+					sim->terrain_state.elem(constants.W/2, constants.H/2).height,
+					1
+				);
+				const Vec4f cam_forwards = GeometrySampling::dirForSphericalCoords(cam_phi + Maths::pi_2<float>(), cam_theta);
+				cam_pos = terrain_centre - cam_forwards * std::max(terrain_w, terrain_h);
+				orbit_dist = std::max(terrain_w, terrain_h);
+				stats = computeTerrainStats(*sim, constants);
 			}
 			else if(reset)
 			{
 				resetTerrain(*sim, command_queue, terrain_params, constants.cell_w, constants.sea_level);
+				if(have_active_dem)
+					applyEsriAsciiGrid(*sim, command_queue, active_dem);
 				stats_last_num_iters = 0;
+				stats = computeTerrainStats(*sim, constants);
 				reset = false;
 			}
 

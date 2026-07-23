@@ -5,11 +5,10 @@ This fork is preparing a native macOS build of Nicholas Chapman's
 OpenCL erosion simulation and OpenGL renderer while adding the macOS-specific
 CGL sharing path, OpenGL 4.1 setup, app packaging, and native file panels.
 
-> **Current status:** source port under active verification. GitHub Actions
-> verifies that the app compiles on an Apple Silicon macOS runner, but a
-> successful CI build is not the same as a GPU/runtime test. Do not describe the
-> app as a finished or notarized release until the smoke-test checklist in
-> [building.md](building.md) passes on a real Mac.
+> **Current status:** the alpha has launched successfully on a physical Apple
+> Silicon Mac and GitHub Actions verifies each build and ad-hoc app signature.
+> It is not yet a notarized release; continue using the smoke-test checklist in
+> [building.md](building.md).
 
 Build locally with:
 
@@ -19,9 +18,42 @@ bash macos/build.sh
 open build-macos/TerrainGen.app
 ```
 
-The first milestone is a stable Mac build. Importing an Australian DEM or other
-real elevation data is the next, separate feature; the current UI starts from
-procedural terrain.
+### Import Victorian elevation data
+
+TerrainGen can import floating-point
+[ESRI ASCII Grid](https://desktop.arcgis.com/en/arcmap/latest/manage-data/raster-and-images/esri-ascii-raster-format.htm)
+(`.asc`) elevation files:
+
+1. Pause the simulation.
+2. Select **Import elevation grid (.asc)**.
+3. Choose a cropped DEM file. TerrainGen resizes the simulation to the file,
+   uses the DEM cell size in metres, preserves elevation values in metres, and
+   pauses before erosion begins.
+
+The importer accepts up to 4,194,304 cells, with a maximum width or height of
+4,096 cells. Crop or resample larger statewide products first. `NODATA_value`
+cells are filled with the lowest valid elevation because TerrainGen's
+simulation grid cannot contain missing cells.
+
+You can also open a DEM from Terminal:
+
+```bash
+open build-macos/TerrainGen.app --args --dem "/path/to/elevation.asc"
+```
+
+Useful official sources:
+
+- [Vicmap Elevation 10m DEM](https://discover.data.vic.gov.au/dataset/vicmap-elevation-dem-10m)
+  is Victoria's statewide, hydrologically enforced 10 m terrain product.
+- The Victorian Government's
+  [3D regional towns LiDAR project](https://www.land.vic.gov.au/maps-and-spatial/imagery/elevation-data/major-lidar-projects/3d-regional-towns-lidar-2018-19)
+  provides open 1 m DEMs in ESRI ASCII format. Its official
+  [Wangaratta sample](https://cip-data-samples.s3.ap-southeast-2.amazonaws.com/elevation/projects/2018-19_3d-regional-towns_lidar/2018-19_3d-regional-towns_sample.zip)
+  is ready to test, although the download is about 436 MiB.
+
+Data remains subject to its source licence. Attribute Vicmap 10m-derived work
+as: © State of Victoria (Department of Transport and Planning), provided under
+the Creative Commons Attribution 4.0 International Licence.
 
 ---
 
