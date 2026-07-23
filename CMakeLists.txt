@@ -23,6 +23,8 @@ endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
 	add_compile_definitions(__SSE3__ __SSSE3__ __SSE4_1__ PNG_INTEL_SSE=1)
+else()
+	add_compile_definitions(PNG_INTEL_SSE=0)
 endif()
 
 add_compile_definitions(
