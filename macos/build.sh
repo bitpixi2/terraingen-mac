@@ -31,9 +31,9 @@ else
 	fi
 fi
 
-if git -C "$GLARE_DIR" apply --check "$GLARE_PATCH"; then
-	git -C "$GLARE_DIR" apply "$GLARE_PATCH"
-elif git -C "$GLARE_DIR" apply --reverse --check "$GLARE_PATCH"; then
+if git -C "$GLARE_DIR" apply --ignore-space-change --check "$GLARE_PATCH"; then
+	git -C "$GLARE_DIR" apply --ignore-space-change "$GLARE_PATCH"
+elif git -C "$GLARE_DIR" apply --ignore-space-change --reverse --check "$GLARE_PATCH"; then
 	echo "Glare Core macOS patch is already applied."
 else
 	echo "Glare Core macOS patch does not apply cleanly to $GLARE_COMMIT." >&2
