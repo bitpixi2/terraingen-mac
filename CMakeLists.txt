@@ -1,15 +1,34 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.21)
 
-project(terraingen)
+project(terraingen LANGUAGES C CXX)
 
-add_definitions(/MP) # Enable multi-processor compilation.
-add_definitions(/W4)
-add_definitions(-DUNICODE -D_UNICODE)
-add_definitions(-D__SSE3__ -D__SSSE3__ -D__SSE4_1__)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_definitions(-DPNG_ALLOW_BENIGN_ERRORS=1)
-add_definitions(-DPNG_INTEL_SSE=1)
-add_definitions(-DPNG_NO_SETJMP=1)
+if(MSVC)
+	add_compile_options(/MP /W4)
+	add_compile_definitions(UNICODE _UNICODE)
+endif()
+
+if(APPLE)
+	enable_language(OBJCXX)
+	add_compile_definitions(
+		OSX=1
+		GL_SILENCE_DEPRECATION=1
+		CL_SILENCE_DEPRECATION=1
+		CL_USE_DEPRECATED_OPENCL_1_1_APIS=1
+	)
+endif()
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+	add_compile_definitions(__SSE3__ __SSSE3__ __SSE4_1__ PNG_INTEL_SSE=1)
+endif()
+
+add_compile_definitions(
+	PNG_ALLOW_BENIGN_ERRORS=1
+	PNG_NO_SETJMP=1
+)
 
 add_definitions(-DBUILD_TESTS=1)
 add_definitions(-DOPENCL_OPENGL_INTEROP=1)
@@ -32,7 +51,9 @@ if(WIN32)
 endif()
 
 
-SET(GLARE_CORE_LIBS $ENV{GLARE_CORE_LIBS})
+if(NOT APPLE)
+	SET(GLARE_CORE_LIBS $ENV{GLARE_CORE_LIBS})
+endif()
 
 #---------------------------- GLARE_CORE_TRUNK ----------------------------
 set(GLARE_CORE_TRUNK "" CACHE FILEPATH "Glare-core trunk source directory")
@@ -44,21 +65,32 @@ endif()
 
 set(GLARE_CORE_TRUNK_DIR_ENV "${GLARE_CORE_TRUNK}")  # Needs to be set for opengl.cmake
 
-#---------------------------- SDL_BUILD_DIR ----------------------------
-set(SDL_BUILD_DIR "" CACHE FILEPATH "SDL build directory")
-MESSAGE("SDL_BUILD_DIR: '${SDL_BUILD_DIR}'")
+if(APPLE)
+	find_package(SDL2 CONFIG REQUIRED)
+	find_package(JPEG REQUIRED)
+	find_package(OpenGL REQUIRED)
+	find_package(OpenCL REQUIRED)
+	find_package(Threads REQUIRED)
+else()
+	#---------------------------- SDL_BUILD_DIR ----------------------------
+	set(SDL_BUILD_DIR "" CACHE FILEPATH "SDL build directory")
+	MESSAGE("SDL_BUILD_DIR: '${SDL_BUILD_DIR}'")
 
-if("${SDL_BUILD_DIR}" STREQUAL "")
-	MESSAGE(FATAL_ERROR "Please specify the SDL2 build directory with -DSDL_BUILD_DIR=XXX")
+	if("${SDL_BUILD_DIR}" STREQUAL "")
+		MESSAGE(FATAL_ERROR "Please specify the SDL2 build directory with -DSDL_BUILD_DIR=XXX")
+	endif()
+	if(NOT EXISTS "${SDL_BUILD_DIR}/include/SDL2/SDL.h")
+		MESSAGE(FATAL_ERROR "Could not find SDL.h from your SDL2 build at '${SDL_BUILD_DIR}/include/SDL2/SDL.h'. Please specify the SDL2 build directory with -DSDL_BUILD_DIR=XXX")
+	endif()
+	#---------------------------- End SDL_BUILD_DIR ----------------------------
 endif()
-if(NOT EXISTS "${SDL_BUILD_DIR}/include/SDL2/SDL.h")
-	MESSAGE(FATAL_ERROR "Could not find SDL.h from your SDL2 build at '${SDL_BUILD_DIR}/include/SDL2/SDL.h'. Please specify the SDL2 build directory with -DSDL_BUILD_DIR=XXX")
-endif()
-#---------------------------- End SDL_BUILD_DIR ----------------------------
 
 add_definitions(-DBASE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
-set(jpegdir		"${GLARE_CORE_LIBS}/libjpeg-turbo/libjpeg-turbo-3.0.0-vs${TERRAINGEN_VS_VER}-install")
+if(NOT APPLE)
+	set(jpegdir		"${GLARE_CORE_LIBS}/libjpeg-turbo/libjpeg-turbo-3.0.0-vs${TERRAINGEN_VS_VER}-install")
+	set(libjpegturbodir "${GLARE_CORE_LIBS}/libjpeg-turbo-builds")
+endif()
 
 # These libraries are checked into the glare-core repo to make setting up builds easier.
 set(zlibdir		"${GLARE_CORE_TRUNK}/zlib")
@@ -68,29 +100,32 @@ set(zstddir		"${GLARE_CORE_TRUNK}/zstd")
 
 #set(imguidir 	"${GLARE_CORE_LIBS}/imgui")
 set(imguidir 	"${GLARE_CORE_TRUNK}/ImGui")
-set(libjpegturbodir "${GLARE_CORE_LIBS}/libjpeg-turbo-builds")
 
 if(WIN32)
 	set(libjpegturbodir "${libjpegturbodir}/vs_${TERRAINGEN_VS_VER}_64") # Append dir suffix for VS version and bitness.
 endif()
 
 include_directories("./")
-include_directories(${SDL_BUILD_DIR}/include/SDL2)
-if(WIN32)
-	include_directories(${SDL_BUILD_DIR}/include-config-release/SDL2) # For SDL_config.h.  NOTE: SDL_config.h seems to be the same for both Debug and Release configs, at least on Windows.
-else()
-	include_directories(${SDL_BUILD_DIR}/include-config-/SDL2)
+if(NOT APPLE)
+	include_directories(${SDL_BUILD_DIR}/include/SDL2)
+	if(WIN32)
+		include_directories(${SDL_BUILD_DIR}/include-config-release/SDL2) # For SDL_config.h.  NOTE: SDL_config.h seems to be the same for both Debug and Release configs, at least on Windows.
+	else()
+		include_directories(${SDL_BUILD_DIR}/include-config-/SDL2)
+	endif()
 endif()
 include_directories(${GLARE_CORE_TRUNK})
 include_directories(${GLARE_CORE_TRUNK}/utils)
 include_directories(${GLARE_CORE_TRUNK}/opengl)
 include_directories(${zstddir}/lib)
 include_directories(${zstddir}/lib/common) # for xxhash
-include_directories(${GLARE_CORE_TRUNK}/opencl/khronos)
 #include_directories(${GLARE_CORE_TRUNK}/opencl/)
 
-include_directories(${jpegdir}/include)  # libjpeg-turbo-master (jpegdir) has most of the source,
-include_directories(${libjpegturbodir})  # libjpegturbodir has jconfig.h
+if(NOT APPLE)
+	include_directories(${GLARE_CORE_TRUNK}/opencl/khronos)
+	include_directories(${jpegdir}/include)  # libjpeg-turbo-master (jpegdir) has most of the source,
+	include_directories(${libjpegturbodir})  # libjpegturbodir has jconfig.h
+endif()
 include_directories(${pngdir})
 include_directories(${zlibdir})
 include_directories(${imguidir})
@@ -163,9 +198,14 @@ ${pngdir}/pnglibconf.h
 ${pngdir}/pngpriv.h
 ${pngdir}/pngstruct.h
 
-${pngdir}/intel/intel_init.c
-${pngdir}/intel/filter_sse2_intrinsics.c
 )
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+	list(APPEND libpng
+		${pngdir}/intel/intel_init.c
+		${pngdir}/intel/filter_sse2_intrinsics.c
+	)
+endif()
 
 
 #============== zlib ==============
@@ -368,6 +408,11 @@ ${GLARE_CORE_TRUNK}/utils/ArgumentParser.cpp
 ${GLARE_CORE_TRUNK}/utils/ArgumentParser.h
 )
 
+if(APPLE)
+	list(REMOVE_ITEM utils "${GLARE_CORE_TRUNK}/utils/FileDialogs.cpp")
+	list(APPEND utils "${CMAKE_CURRENT_SOURCE_DIR}/macos/FileDialogsMac.mm")
+endif()
+
 set(maths
 ${GLARE_CORE_TRUNK}/maths/SSE.cpp
 ${GLARE_CORE_TRUNK}/maths/SSE.h
@@ -415,7 +460,12 @@ SOURCE_GROUP(opencl FILES ${opencl})
 SOURCE_GROUP(meshoptimizer FILES ${meshoptimizer})
 
 
+if(APPLE)
+	set(TERRAINGEN_BUNDLE_OPTION MACOSX_BUNDLE)
+endif()
+
 add_executable(terraingen
+${TERRAINGEN_BUNDLE_OPTION}
 terraingen.cpp
 erosion_kernel.cl
 #notes.txt
@@ -444,12 +494,53 @@ ${meshoptimizer}
 #endif()
 
 
-target_link_libraries(terraingen
-debug "${SDL_BUILD_DIR}/Debug/SDL2d.lib" 
-debug "${SDL_BUILD_DIR}/Debug/SDL2maind.lib" 
-optimized "${SDL_BUILD_DIR}/RelWithDebInfo/SDL2.lib" 
-optimized "${SDL_BUILD_DIR}/RelWithDebInfo/SDL2main.lib" 
-Opengl32.lib
-debug     "${jpegdir}/lib/turbojpeg-static.lib" 
-optimized "${jpegdir}/lib/turbojpeg-static.lib" 
-)
+if(WIN32)
+	target_link_libraries(terraingen
+		debug "${SDL_BUILD_DIR}/Debug/SDL2d.lib"
+		debug "${SDL_BUILD_DIR}/Debug/SDL2maind.lib"
+		optimized "${SDL_BUILD_DIR}/RelWithDebInfo/SDL2.lib"
+		optimized "${SDL_BUILD_DIR}/RelWithDebInfo/SDL2main.lib"
+		Opengl32.lib
+		debug     "${jpegdir}/lib/turbojpeg-static.lib"
+		optimized "${jpegdir}/lib/turbojpeg-static.lib"
+	)
+elseif(APPLE)
+	find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
+	find_library(CORE_SERVICES_FRAMEWORK CoreServices REQUIRED)
+
+	target_link_libraries(terraingen PRIVATE
+		SDL2::SDL2
+		JPEG::JPEG
+		OpenGL::GL
+		OpenCL::OpenCL
+		Threads::Threads
+		${COCOA_FRAMEWORK}
+		${CORE_SERVICES_FRAMEWORK}
+	)
+
+	set_target_properties(terraingen PROPERTIES
+		OUTPUT_NAME "TerrainGen"
+		MACOSX_BUNDLE_BUNDLE_NAME "TerrainGen"
+		MACOSX_BUNDLE_GUI_IDENTIFIER "com.bitpixi.terraingen"
+		MACOSX_BUNDLE_SHORT_VERSION_STRING "0.3-macos-alpha"
+		MACOSX_BUNDLE_BUNDLE_VERSION "0.3"
+		MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in"
+	)
+
+	add_custom_command(TARGET terraingen POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:terraingen>/Contents/Resources"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${CMAKE_CURRENT_SOURCE_DIR}/erosion_kernel.cl"
+			"$<TARGET_BUNDLE_DIR:terraingen>/Contents/Resources/erosion_kernel.cl"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${CMAKE_CURRENT_SOURCE_DIR}/resources"
+			"$<TARGET_BUNDLE_DIR:terraingen>/Contents/Resources/resources"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${GLARE_CORE_TRUNK}/opengl/gl_data"
+			"$<TARGET_BUNDLE_DIR:terraingen>/Contents/Resources/gl_data"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${GLARE_CORE_TRUNK}/opengl/shaders"
+			"$<TARGET_BUNDLE_DIR:terraingen>/Contents/Resources/shaders"
+		VERBATIM
+	)
+endif()
