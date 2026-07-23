@@ -25,6 +25,12 @@ diff --git a/libpng/pngpriv.h b/libpng/pngpriv.h
     /* We need to check that <math.h> hasn't already been included earlier
      * as it seems it doesn't agree with <fp.h>, yet we should really use
      * <fp.h> if possible.
+diff --git a/zlib/zutil.h b/zlib/zutil.h
+--- a/zlib/zutil.h
++++ b/zlib/zutil.h
+@@ -140,1 +140,1 @@
+-#if defined(MACOS) || defined(TARGET_OS_MAC)
++#if defined(MACOS) || (defined(TARGET_OS_MAC) && !defined(__MACH__))
 diff --git a/opencl/OpenCL.h b/opencl/OpenCL.h
 --- a/opencl/OpenCL.h
 +++ b/opencl/OpenCL.h
