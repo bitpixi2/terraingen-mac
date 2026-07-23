@@ -28,7 +28,7 @@ diff --git a/libpng/pngpriv.h b/libpng/pngpriv.h
 diff --git a/zlib/zutil.h b/zlib/zutil.h
 --- a/zlib/zutil.h
 +++ b/zlib/zutil.h
-@@ -136,9 +136,9 @@
+@@ -136,8 +136,8 @@
  #    include <malloc.h>
  #  endif
  #endif
