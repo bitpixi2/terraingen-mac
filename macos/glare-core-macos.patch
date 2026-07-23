@@ -29,6 +29,17 @@ diff --git a/opencl/OpenCL.h b/opencl/OpenCL.h
  #else
  #include <CL/cl.h>
  #include <CL/cl_platform.h>
+@@ -86,8 +88,12 @@
+ #if OPENCL_OPENGL_INTEROP
+ typedef void * (CL_API_CALL *clGetExtensionFunctionAddress_TYPE) (const char *funcname);
++#if defined(OSX)
++typedef cl_int (CL_API_CALL *clGetGLContextInfoKHR_TYPE) (cl_context_properties *properties, cl_uint param_name, size_t param_value_size, void *param_value, size_t *param_value_size_ret);
++#else
+ typedef cl_int (CL_API_CALL *clGetGLContextInfoKHR_TYPE) (cl_context_properties *properties, cl_gl_context_info param_name, size_t param_value_size, void *param_value, size_t *param_value_size_ret);
++#endif
+ typedef cl_mem (CL_API_CALL *clCreateFromGLTexture_TYPE) (cl_context context, cl_mem_flags flags, cl_GLenum target, cl_GLint miplevel, cl_GLuint texture, cl_int *errcode_ret);
+ typedef cl_mem (CL_API_CALL *clCreateFromGLTexture2D_TYPE) (cl_context context, cl_mem_flags flags, cl_GLenum target, cl_GLint miplevel, cl_GLuint texture, cl_int *errcode_ret);
+ typedef cl_mem (CL_API_CALL *clCreateFromGLBuffer_TYPE) (cl_context context, cl_mem_flags flags, /*GLuint*/unsigned int bufobj, cl_int * errcode_ret);
 diff --git a/opencl/OpenCLContext.cpp b/opencl/OpenCLContext.cpp
 --- a/opencl/OpenCLContext.cpp
 +++ b/opencl/OpenCLContext.cpp
