@@ -21,7 +21,7 @@ brew install cmake ninja sdl2 jpeg-turbo
 From the TerrainGen repository root:
 
 ```bash
-./macos/build.sh
+bash macos/build.sh
 ```
 
 The script:
