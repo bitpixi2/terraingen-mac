@@ -327,6 +327,13 @@ ${GLARE_CORE_TRUNK}/graphics/TextureData.h
 
 include(${GLARE_CORE_TRUNK}/opengl/opengl.cmake)
 
+if(APPLE)
+	list(REMOVE_ITEM opengl
+		"${GLARE_CORE_TRUNK}/opengl/RenderStatsWidget.cpp"
+		"${GLARE_CORE_TRUNK}/opengl/RenderStatsWidget.h"
+	)
+endif()
+
 set(utils
 ${GLARE_CORE_TRUNK}/utils/BestFitAllocator.cpp
 ${GLARE_CORE_TRUNK}/utils/BestFitAllocator.h
@@ -486,7 +493,6 @@ erosion_kernel.cl
 ${indigo}
 ${graphics}
 ${opengl}
-${opengl_ui}
 ${utils}
 ${maths}
 ${double_conversion}
