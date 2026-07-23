@@ -207,6 +207,12 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
 		${pngdir}/intel/intel_init.c
 		${pngdir}/intel/filter_sse2_intrinsics.c
 	)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+	list(APPEND libpng
+		${pngdir}/arm/arm_init.c
+		${pngdir}/arm/filter_neon_intrinsics.c
+		${pngdir}/arm/palette_neon_intrinsics.c
+	)
 endif()
 
 
@@ -406,6 +412,14 @@ ${GLARE_CORE_TRUNK}/utils/IndigoXMLDoc.cpp
 ${GLARE_CORE_TRUNK}/utils/IndigoXMLDoc.h
 ${GLARE_CORE_TRUNK}/utils/IndigoXMLDoc.cpp
 ${GLARE_CORE_TRUNK}/utils/IndigoXMLDoc.h
+${GLARE_CORE_TRUNK}/utils/StackAllocator.cpp
+${GLARE_CORE_TRUNK}/utils/StackAllocator.h
+${GLARE_CORE_TRUNK}/utils/FastPoolAllocator.cpp
+${GLARE_CORE_TRUNK}/utils/FastPoolAllocator.h
+${GLARE_CORE_TRUNK}/utils/SharedImmutableString.cpp
+${GLARE_CORE_TRUNK}/utils/SharedImmutableString.h
+${GLARE_CORE_TRUNK}/utils/SharedStringTable.cpp
+${GLARE_CORE_TRUNK}/utils/SharedStringTable.h
 ${GLARE_CORE_TRUNK}/utils/ArgumentParser.cpp
 ${GLARE_CORE_TRUNK}/utils/ArgumentParser.h
 )
@@ -472,6 +486,7 @@ erosion_kernel.cl
 ${indigo}
 ${graphics}
 ${opengl}
+${opengl_ui}
 ${utils}
 ${maths}
 ${double_conversion}
