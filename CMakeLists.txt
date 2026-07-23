@@ -426,22 +426,20 @@ set(MESHOPTIMIZER_DIR "${GLARE_CORE_TRUNK}/meshoptimizer/src")
 
 set(meshoptimizer
 ${MESHOPTIMIZER_DIR}/allocator.cpp
-${MESHOPTIMIZER_DIR}/meshoptimizer.h
-${MESHOPTIMIZER_DIR}/allocator.cpp
 ${MESHOPTIMIZER_DIR}/clusterizer.cpp
 ${MESHOPTIMIZER_DIR}/indexcodec.cpp
 ${MESHOPTIMIZER_DIR}/indexgenerator.cpp
-${MESHOPTIMIZER_DIR}/overdrawanalyzer.cpp
+${MESHOPTIMIZER_DIR}/meshoptimizer.h
 ${MESHOPTIMIZER_DIR}/overdrawoptimizer.cpp
+${MESHOPTIMIZER_DIR}/partition.cpp
+${MESHOPTIMIZER_DIR}/quantization.cpp
 ${MESHOPTIMIZER_DIR}/simplifier.cpp
 ${MESHOPTIMIZER_DIR}/spatialorder.cpp
 ${MESHOPTIMIZER_DIR}/stripifier.cpp
-${MESHOPTIMIZER_DIR}/vcacheanalyzer.cpp
 ${MESHOPTIMIZER_DIR}/vcacheoptimizer.cpp
 ${MESHOPTIMIZER_DIR}/vertexcodec.cpp
 ${MESHOPTIMIZER_DIR}/vertexfilter.cpp
-${MESHOPTIMIZER_DIR}/vfetchanalyzer.cpp
-${MESHOPTIMIZER_DIR}/vfetchoptimizer.cpp   
+${MESHOPTIMIZER_DIR}/vfetchoptimizer.cpp
 )
 
 
